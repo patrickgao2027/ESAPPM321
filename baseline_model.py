@@ -1,6 +1,8 @@
 
 import numpy as np
-
+from sympy import (
+    symbols, Matrix, simplify, matrix2numpy
+)
 
 # ==========================================
 # 1. COMPETITIVE LOTKA-VOLTERRA MODEL
@@ -109,3 +111,119 @@ def calculate_stability(S, P, r_s, r_p, K_s, K_p,
         stability = "Inconclusive / Non-hyperbolic"
 
     return eigenvalues, stability
+
+# ==========================================
+# 4. SYMBOLIC FIXED-POINT ANALYSIS
+# ==========================================
+
+def symbolic_fixed_point_analysis(params):
+    """
+    Compute eigenvalues, trace, determinant, and
+    stability classification for all four fixed points
+    using the symbolic Jacobian.
+
+    params: dict with keys r_s, r_p, K_s, K_p,
+            alpha_sp, alpha_ps (all numeric)
+    """
+
+    r_s, r_p, K_s, K_p, alpha_sp, alpha_ps = symbols(
+        'r_s r_p K_s K_p alpha_sp alpha_ps', positive=True
+    )
+
+    S, P = symbols('S P')
+
+    sym_params = {
+        r_s:      params["r_s"],
+        r_p:      params["r_p"],
+        K_s:      params["K_s"],
+        K_p:      params["K_p"],
+        alpha_sp: params["alpha_sp"],
+        alpha_ps: params["alpha_ps"],
+    }
+
+    # Symbolic Jacobian
+    J11 = r_s - (r_s / K_s) * (2*S + alpha_sp*P)
+    J12 = -r_s * alpha_sp * S / K_s
+    J21 = -r_p * alpha_ps * P / K_p
+    J22 = r_p - (r_p / K_p) * (2*P + alpha_ps*S)
+
+    J = Matrix([[J11, J12], [J21, J22]])
+
+    # Coexistence fixed point (symbolic)
+    S_star = (K_s - alpha_sp*K_p) / (1 - alpha_sp*alpha_ps)
+    P_star = (K_p - alpha_ps*K_s) / (1 - alpha_sp*alpha_ps)
+
+    fixed_points = {
+        "(0, 0)":   {S: 0,      P: 0},
+        "(K_s, 0)": {S: K_s,    P: 0},
+        "(0, K_p)": {S: 0,      P: K_p},
+        "(S*, P*)": {S: S_star,  P: P_star},
+    }
+
+    print("\nSYMBOLIC FIXED-POINT ANALYSIS")
+
+    for name, point in fixed_points.items():
+
+        print(f"\n--- Fixed point {name} ---")
+
+        # Substitute fixed point then numerical params
+        J_eval = J.subs(point).subs(sym_params)
+        J_num = matrix2numpy(J_eval, dtype=float)
+
+        eigenvalues = np.linalg.eigvals(J_num)
+        print("Eigenvalues:", eigenvalues)
+
+        det = eigenvalues[0] * eigenvalues[1]
+        print("Determinant:", det)
+
+        tr = eigenvalues[0] + eigenvalues[1]
+        print("Trace:      ", tr)
+
+        discriminant = tr**2 - 4*det
+        print("Discriminant:", discriminant)
+
+        if det < 0:
+            stability = "Saddle"
+        elif det > 0:
+            if discriminant < 0:
+                stability = (
+                    "Stable Spiral" if tr < 0
+                    else "Unstable Spiral"
+                )
+            elif discriminant > 0:
+                stability = (
+                    "Stable Node" if tr < 0
+                    else "Unstable Node"
+                )
+            elif discriminant == 0:
+                stability = "Degenerate Node"
+            elif tr == 0:
+                stability = "Center"
+            else:
+                stability = "Non-isolated fixed points"
+        else:
+            stability = "Inconclusive"
+
+        print("Stability:  ", stability)
+
+    print("\nSYMBOLIC JACOBIAN ANALYSIS (simplified)")
+
+    for name, point in fixed_points.items():
+
+        print(f"\nFixed point: {name}")
+
+        J_sym = simplify(J.subs(point))
+        print("Jacobian:")
+        print(J_sym)
+
+        eigenvalues_sym = J_sym.eigenvals()
+        for eigenvalue, multiplicity in eigenvalues_sym.items():
+            print(
+                f"Eigenvalue: {eigenvalue}  "
+                f"Multiplicity: {multiplicity}"
+            )
+
+        trace = simplify(J_sym.trace())
+        determinant = simplify(J_sym.det())
+        print("Trace:      ", trace)
+        print("Determinant:", determinant)
